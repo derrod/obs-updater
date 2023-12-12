@@ -32,10 +32,17 @@ function Configure {
     Log-Information "Configure (${Target})"
     Set-Location $Path
 
+    $MSVCLib = '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded'
+    if ( $Configuration -match "Debug" ) {
+        $MSVCLib += 'Debug'
+    }
+    
     $Options = @(
         $CmakeOptions
         '-DBUILD_SHARED_LIBS=OFF'
         '-DBROTLI_DISABLE_TESTS=ON'
+        '-DCMAKE_POLICY_DEFAULT_CMP0091=NEW'
+        $MSVCLib
     )
 
     Invoke-External cmake -S . -B "build_${Target}" @Options
