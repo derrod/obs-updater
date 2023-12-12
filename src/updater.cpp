@@ -19,7 +19,7 @@
 
 #include <psapi.h>
 
-#include <util/windows/CoTaskMemPtr.hpp>
+#include <util/CoTaskMemPtr.hpp>
 
 #include <future>
 #include <string>

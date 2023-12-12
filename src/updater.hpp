@@ -75,7 +75,7 @@ using B2Hash = std::array<std::byte, kBlake2HashLength>;
 			"language='*'\"")
 #endif
 
-#include <util/windows/WinHandle.hpp>
+#include <util/WinHandle.hpp>
 #include "resource.h"
 
 bool HTTPGetFile(HINTERNET hConnect, const wchar_t *url,

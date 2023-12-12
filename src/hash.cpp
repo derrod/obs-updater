@@ -16,7 +16,7 @@
 
 #include "updater.hpp"
 
-#include <util/windows/WinHandle.hpp>
+#include <util/WinHandle.hpp>
 #include <vector>
 
 using namespace std;
