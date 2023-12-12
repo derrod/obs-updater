@@ -1,0 +1,18 @@
+# Exclude everything
+/*
+
+# Except for default project files
+!/.github
+!/cmake
+!/deps
+!/src
+!/vendor
+!.clang-format
+!.cmake-format.json
+!.gitignore
+!CMakeLists.txt
+!COPYING
+!README.rst
+
+# Exclude lock files
+*.lock.json
