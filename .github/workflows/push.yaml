@@ -1,0 +1,41 @@
+name: Build
+
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+    branches:
+      - master
+      - 'release/**'
+    tags:
+      - '*'
+
+jobs:
+  build:
+    name: Build
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      
+      - name: Build Dependencies
+        run: |
+          & .\deps\Build-Dependencies.ps1
+
+      - name: Build Updater
+        run: |
+          $buildDir = "build"
+          cmake -S . -B $buildDir
+          cmake --build $buildDir --config Release
+          cmake --install $buildDir --prefix output
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: updater
+          path: ${{ github.workspace }}/output/bin/*
