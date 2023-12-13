@@ -399,6 +399,8 @@ static int Decompress(ZSTD_DCtx *ctx, std::vector<std::byte> &buf, size_t size)
 static size_t buffer_write(char *ptr, size_t size, size_t nmemb,
 			   vector<std::byte> *vec)
 {
+	static int last_position = 0;
+
 	size_t total = size * nmemb;
 	if (total) {
 		vec->insert(vec->end(), reinterpret_cast<std::byte *>(ptr),
@@ -408,8 +410,11 @@ static size_t buffer_write(char *ptr, size_t size, size_t nmemb,
 		int position = (int)(((float)completedFileSize /
 				      (float)totalFileSize) *
 				     100.0f);
-		SendDlgItemMessage(hwndMain, IDC_PROGRESS, PBM_SETPOS, position,
-				   0);
+		if (position > last_position) {
+			SendDlgItemMessage(hwndMain, IDC_PROGRESS, PBM_SETPOS,
+					   position, 0);
+			last_position = position;
+		}
 	}
 
 	return total;
