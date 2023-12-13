@@ -9,6 +9,7 @@
 !/vendor
 !.clang-format
 !.cmake-format.json
+!.editorconfig
 !.gitignore
 !CMakeLists.txt
 !COPYING
