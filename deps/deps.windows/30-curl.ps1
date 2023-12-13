@@ -50,6 +50,7 @@ function Configure {
         '-DUSE_NGHTTP2:BOOL=ON'
     )
 
+    # Required, otherwise it'll try to link to a DLL
     $env:CFLAGS="-DNGHTTP2_STATICLIB"
     $env:CXXFLAGS="-DNGHTTP2_STATICLIB"
     Invoke-External cmake -S . -B "build_${Target}" @Options
