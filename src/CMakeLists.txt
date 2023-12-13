@@ -27,7 +27,7 @@ target_sources(
           util/CoTaskMemPtr.hpp
           util/WinHandle.hpp)
 
-target_compile_options(updater PRIVATE $<IF:$<CONFIG:DEBUG>,/MTd,/MT> "/utf-8")
+target_compile_options(updater PRIVATE "/utf-8")
 target_compile_definitions(updater PRIVATE NOMINMAX "PSAPI_VERSION=2")
 
 target_link_libraries(
