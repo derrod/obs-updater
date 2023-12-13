@@ -432,8 +432,6 @@ bool DownloadWorkerThread()
 		return false;
 	}
 
-	curl_multi_setopt(multi, CURLMOPT_PIPELINING, CURLPIPE_MULTIPLEX);
-
 	std::vector<CurlRequest> requests;
 
 	ZSTDDCtx zCtx;
@@ -476,8 +474,6 @@ bool DownloadWorkerThread()
 					 buffer_write);
 			curl_easy_setopt(req, CURLOPT_WRITEDATA, &buf);
 			curl_easy_setopt(req, CURLOPT_PRIVATE, &update);
-			curl_easy_setopt(req, CURLOPT_HTTP_VERSION,
-					 CURL_HTTP_VERSION_2_0);
 
 			curl_multi_add_handle(multi, req);
 		}
