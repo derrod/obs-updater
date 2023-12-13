@@ -275,7 +275,7 @@ enum state_t {
 };
 
 struct update_t {
-	wstring sourceURL;
+	string sourceURL;
 	wstring outputPath;
 	wstring previousFile;
 	string packageName;
@@ -357,6 +357,22 @@ static inline void CleanupPartialUpdates()
 
 /* ----------------------------------------------------------------------- */
 
+static inline bool UTF8ToWide(wchar_t *wide, int wideSize, const char *utf8)
+{
+	return !!MultiByteToWideChar(CP_UTF8, 0, utf8, -1, wide, wideSize);
+}
+
+static inline bool WideToUTF8(char *utf8, int utf8Size, const wchar_t *wide)
+{
+	return !!WideCharToMultiByte(CP_UTF8, 0, wide, -1, utf8, utf8Size,
+				     nullptr, nullptr);
+}
+
+#define UTF8ToWideBuf(wide, utf8) UTF8ToWide(wide, _countof(wide), utf8)
+#define WideToUTF8Buf(utf8, wide) WideToUTF8(utf8, _countof(utf8), wide)
+
+/* ----------------------------------------------------------------------- */
+
 static int Decompress(ZSTD_DCtx *ctx, std::vector<std::byte> &buf, size_t size)
 {
 	// Copy compressed data
@@ -380,51 +396,47 @@ static int Decompress(ZSTD_DCtx *ctx, std::vector<std::byte> &buf, size_t size)
 	return 0;
 }
 
+static size_t buffer_write(char *ptr, size_t size, size_t nmemb,
+			   vector<std::byte> *vec)
+{
+	size_t total = size * nmemb;
+	if (total) {
+		vec->insert(vec->end(), reinterpret_cast<std::byte *>(ptr),
+			    reinterpret_cast<std::byte *>(ptr) + total);
+
+		completedFileSize += total;
+		int position = (int)(((float)completedFileSize /
+				      (float)totalFileSize) *
+				     100.0f);
+		SendDlgItemMessage(hwndMain, IDC_PROGRESS, PBM_SETPOS, position,
+				   0);
+	}
+
+	return total;
+}
+
+static constexpr const char *user_agent_header =
+	"User-Agent: OBS Studio Updater/3.0 curl/8.4.0";
+
 bool DownloadWorkerThread()
 {
-	const DWORD tlsProtocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2 |
-				   WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
-
-	const DWORD enableHTTP2Flag = WINHTTP_PROTOCOL_FLAG_HTTP2;
-
-	const DWORD compressionFlags = WINHTTP_DECOMPRESSION_FLAG_ALL;
-
-	HttpHandle hSession = WinHttpOpen(L"OBS Studio Updater/3.0",
-					  WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-					  WINHTTP_NO_PROXY_NAME,
-					  WINHTTP_NO_PROXY_BYPASS, 0);
-	if (!hSession) {
+	auto multi = CurlMulti();
+	if (!multi) {
 		downloadThreadFailure = true;
-		Status(L"Update failed: Couldn't open obsproject.com");
+		Status(L"Update failed: Failed to initialise cURL");
 		return false;
 	}
 
-	WinHttpSetOption(hSession, WINHTTP_OPTION_SECURE_PROTOCOLS,
-			 (LPVOID)&tlsProtocols, sizeof(tlsProtocols));
+	curl_multi_setopt(multi, CURLMOPT_PIPELINING, CURLPIPE_MULTIPLEX);
 
-	WinHttpSetOption(hSession, WINHTTP_OPTION_ENABLE_HTTP_PROTOCOL,
-			 (LPVOID)&enableHTTP2Flag, sizeof(enableHTTP2Flag));
-
-	WinHttpSetOption(hSession, WINHTTP_OPTION_DECOMPRESSION,
-			 (LPVOID)&compressionFlags, sizeof(compressionFlags));
-
-	HttpHandle hConnect = WinHttpConnect(hSession, kCDNHostname,
-					     INTERNET_DEFAULT_HTTPS_PORT, 0);
-	if (!hConnect) {
-		downloadThreadFailure = true;
-		Status(L"Update failed: Couldn't connect to %S", kCDNHostname);
-		return false;
-	}
+	std::vector<CurlRequest> requests;
 
 	ZSTDDCtx zCtx;
 
 	for (;;) {
 		bool foundWork = false;
 
-		unique_lock<mutex> ulock(updateMutex);
-
 		for (update_t &update : updates) {
-			int responseCode;
 
 			DWORD waitResult =
 				WaitForSingleObject(cancelRequested, 0);
@@ -437,66 +449,32 @@ bool DownloadWorkerThread()
 
 			update.state = STATE_DOWNLOADING;
 
-			ulock.unlock();
-
 			foundWork = true;
 
 			if (downloadThreadFailure) {
 				return false;
 			}
 
-			auto &buf = download_data[update.downloadHash];
+			vector<std::byte> &buf =
+				download_data[update.downloadHash];
 			/* Reserve required memory */
 			buf.reserve(update.fileSize);
 
-			if (!HTTPGetBuffer(hConnect, update.sourceURL.c_str(),
-					   L"Accept-Encoding: gzip", buf,
-					   &responseCode)) {
-				downloadThreadFailure = true;
-				Status(L"Update failed: Could not download "
-				       L"%s (error code %d)",
-				       update.outputPath.c_str(), responseCode);
-				return true;
-			}
+			auto &req = requests.emplace_back();
+			req.addHeader(user_agent_header);
 
-			if (responseCode != 200) {
-				downloadThreadFailure = true;
-				Status(L"Update failed: Could not download "
-				       L"%s (error code %d)",
-				       update.outputPath.c_str(), responseCode);
-				return true;
-			}
+			/* ToDo move all of this somewhere else? */
+			curl_easy_setopt(req, CURLOPT_URL,
+					 update.sourceURL.c_str());
+			curl_easy_setopt(req, CURLOPT_FAILONERROR, 1L);
+			curl_easy_setopt(req, CURLOPT_WRITEFUNCTION,
+					 buffer_write);
+			curl_easy_setopt(req, CURLOPT_WRITEDATA, &buf);
+			curl_easy_setopt(req, CURLOPT_PRIVATE, &update);
+			curl_easy_setopt(req, CURLOPT_HTTP_VERSION,
+					 CURL_HTTP_VERSION_2_0);
 
-			/* Validate hash of downloaded data. */
-			B2Hash dataHash;
-			blake2b(dataHash.data(), dataHash.size(), buf.data(),
-				buf.size(), nullptr, 0);
-
-			if (dataHash != update.downloadHash) {
-				downloadThreadFailure = true;
-				Status(L"Update failed: Integrity check "
-				       L"failed on %s",
-				       update.outputPath.c_str());
-				return true;
-			}
-
-			/* Decompress data in compressed buffer. */
-			if (update.compressed && !update.patchable) {
-				int res =
-					Decompress(zCtx, buf, update.fileSize);
-				if (res) {
-					downloadThreadFailure = true;
-					Status(L"Update failed: Decompression "
-					       L"failed on %s (error code %d)",
-					       update.outputPath.c_str(), res);
-					return true;
-				}
-			}
-
-			ulock.lock();
-
-			update.state = STATE_DOWNLOADED;
-			completedUpdates++;
+			curl_multi_add_handle(multi, req);
 		}
 
 		if (!foundWork) {
@@ -506,6 +484,81 @@ bool DownloadWorkerThread()
 			return false;
 		}
 	}
+
+	CURLMsg *msg;
+	int still_running, msgs_left;
+	bool failure = false;
+
+	do {
+		CURLMcode mc = curl_multi_perform(multi, &still_running);
+
+		if (still_running || !mc || !failure) {
+			Status(L"Downloading: %d files remaining",
+			       still_running);
+			mc = curl_multi_poll(multi, NULL, 0, 100, NULL);
+		}
+
+		while ((msg = curl_multi_info_read(multi, &msgs_left))) {
+			if (msg->msg != CURLMSG_DONE)
+				continue;
+
+			CURLcode result = msg->data.result;
+			if (result != CURLE_OK) {
+				downloadThreadFailure = true;
+				wchar_t werror[1024];
+				UTF8ToWideBuf(werror,
+					      curl_easy_strerror(result));
+				Status(L"Update failed: cURL error %s", werror);
+				failure = true;
+				break;
+			}
+
+			void *ptr;
+			curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE,
+					  &ptr);
+
+			update_t *update = static_cast<update_t *>(ptr);
+			vector<std::byte> &buf =
+				download_data[update->downloadHash];
+
+			/* Validate hash of downloaded data. */
+			B2Hash dataHash;
+			blake2b(dataHash.data(), dataHash.size(), buf.data(),
+				buf.size(), nullptr, 0);
+
+			if (dataHash != update->downloadHash) {
+				downloadThreadFailure = true;
+				Status(L"Update failed: Integrity check "
+				       L"failed on %s",
+				       update->outputPath.c_str());
+				failure = true;
+				break;
+			}
+
+			/* Decompress data in compressed buffer. */
+			if (update->compressed && !update->patchable) {
+				int res =
+					Decompress(zCtx, buf, update->fileSize);
+				if (res) {
+					downloadThreadFailure = true;
+					Status(L"Update failed: Decompression "
+					       L"failed on %s (error code %d)",
+					       update->outputPath.c_str(), res);
+					failure = true;
+					break;
+				}
+			}
+
+			completedUpdates++;
+			update->state = STATE_DOWNLOADED;
+		}
+
+		if (mc || failure)
+			break;
+	} while (still_running || msgs_left);
+
+	for (const auto &req : requests)
+		curl_multi_remove_handle(multi, req);
 
 	return true;
 }
@@ -603,22 +656,6 @@ static bool WaitForOBS()
 
 	return true;
 }
-
-/* ----------------------------------------------------------------------- */
-
-static inline bool UTF8ToWide(wchar_t *wide, int wideSize, const char *utf8)
-{
-	return !!MultiByteToWideChar(CP_UTF8, 0, utf8, -1, wide, wideSize);
-}
-
-static inline bool WideToUTF8(char *utf8, int utf8Size, const wchar_t *wide)
-{
-	return !!WideCharToMultiByte(CP_UTF8, 0, wide, -1, utf8, utf8Size,
-				     nullptr, nullptr);
-}
-
-#define UTF8ToWideBuf(wide, utf8) UTF8ToWide(wide, _countof(wide), utf8)
-#define WideToUTF8Buf(utf8, wide) WideToUTF8(utf8, _countof(utf8), wide)
 
 /* ----------------------------------------------------------------------- */
 
@@ -738,6 +775,9 @@ static bool AddPackageUpdateFiles(const Package &package, const wchar_t *branch)
 			       kCDNUpdateBaseUrl, branch, wPackageName,
 			       updateFileName);
 
+		char urlUtf[1024];
+		WideToUTF8Buf(urlUtf, sourceURL);
+
 		/* Convert hashes */
 		B2Hash updateHash;
 		StringToHash(file.hash, updateHash);
@@ -759,7 +799,7 @@ static bool AddPackageUpdateFiles(const Package &package, const wchar_t *branch)
 		update_t update;
 		update.fileSize = file.size;
 		update.outputPath = updateFileName;
-		update.sourceURL = sourceURL;
+		update.sourceURL = urlUtf;
 		update.packageName = package.name;
 		update.state = STATE_PENDING_DOWNLOAD;
 		update.patchable = false;
@@ -767,7 +807,7 @@ static bool AddPackageUpdateFiles(const Package &package, const wchar_t *branch)
 		update.hash = updateHash;
 
 		if (compressed) {
-			update.sourceURL += L".zst";
+			update.sourceURL += ".zst";
 			StringToHash(file.compressed_hash, update.downloadHash);
 		} else {
 			update.downloadHash = updateHash;
@@ -849,7 +889,6 @@ static bool RenameRemovedFile(deletion_t &deletion)
 static void UpdateWithPatchIfAvailable(const PatchResponse &patch)
 {
 	wchar_t widePatchableFilename[MAX_PATH];
-	wchar_t sourceURL[1024];
 
 	if (patch.source.compare(0, kCDNUrl.size(), kCDNUrl) != 0)
 		return;
@@ -861,8 +900,6 @@ static void UpdateWithPatchIfAvailable(const PatchResponse &patch)
 	string fileName(patch.name, patch.name.find('/') + 1);
 
 	if (!UTF8ToWideBuf(widePatchableFilename, fileName.c_str()))
-		return;
-	if (!UTF8ToWideBuf(sourceURL, patch.source.c_str()))
 		return;
 
 	for (update_t &update : updates) {
@@ -876,7 +913,7 @@ static void UpdateWithPatchIfAvailable(const PatchResponse &patch)
 		/* Replace the source URL with the patch file, update
 	         * the download hash, and re-calculate download size */
 		StringToHash(patch.hash, update.downloadHash);
-		update.sourceURL = sourceURL;
+		update.sourceURL = patch.source;
 		totalFileSize -= (update.fileSize - patch.size);
 		update.fileSize = patch.size;
 
@@ -1629,7 +1666,7 @@ static bool Update(wchar_t *cmdLine)
 	 * Download Updates                      */
 
 	Status(L"Downloading updates...");
-	if (!RunDownloadWorkers(4))
+	if (!RunDownloadWorkers(1))
 		return false;
 
 	if ((size_t)completedUpdates != updates.size()) {
@@ -2006,6 +2043,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int)
 
 		ShowWindow(hwndMain, SW_SHOWNORMAL);
 		SetForegroundWindow(hwndMain);
+
+		curl_global_init(CURL_GLOBAL_ALL);
 
 		cancelRequested = CreateEvent(nullptr, true, false, nullptr);
 		updateThread = CreateThread(nullptr, 0, UpdateThread, lpCmdLine,
