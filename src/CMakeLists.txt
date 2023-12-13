@@ -31,7 +31,7 @@ target_compile_definitions(updater PRIVATE NOMINMAX "PSAPI_VERSION=2")
 
 target_link_libraries(updater PRIVATE OBS::blake2 nlohmann_json::nlohmann_json zstd::libzstd_static comctl32 shell32
                                       winhttp)
-target_link_options(updater PRIVATE /IGNORE:4098 "/PDBALTPATH:updater")
+target_link_options(updater PRIVATE /IGNORE:4098 "/PDBALTPATH:updater.pdb")
 
 install(TARGETS updater)
 install(
