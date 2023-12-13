@@ -423,17 +423,6 @@ static size_t buffer_write(char *ptr, size_t size, size_t nmemb,
 static constexpr const char *user_agent_header =
 	"User-Agent: OBS Studio Updater/3.0 curl/8.4.0";
 
-static uint64_t getTime()
-{
-	FILETIME ft;
-	ULARGE_INTEGER ul;
-	GetSystemTimeAsFileTime(&ft);
-	ul.LowPart = ft.dwLowDateTime;
-	ul.HighPart = ft.dwHighDateTime;
-
-	return ul.QuadPart / 10000;
-}
-
 bool DownloadWorkerThread()
 {
 	auto multi = CurlMulti();
@@ -506,7 +495,7 @@ bool DownloadWorkerThread()
 		CURLMcode mc = curl_multi_perform(multi, &still_running);
 
 		if (still_running || !mc || !failure) {
-			uint64_t ts = getTime();
+			uint64_t ts = GetTickCount64();
 			if (ts - last_update > 100) {
 				double remaining = (double)(totalFileSize -
 							    completedFileSize) /
