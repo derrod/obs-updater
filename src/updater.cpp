@@ -35,12 +35,8 @@ using namespace updater;
 
 /* ----------------------------------------------------------------------- */
 
-constexpr const string_view kCDNUrl = "https://cdn-fastly.obsproject.com/";
-constexpr const wchar_t *kCDNHostname = L"cdn-fastly.obsproject.com";
 constexpr const wchar_t *kCDNUpdateBaseUrl =
-	L"https://cdn-fastly.obsproject.com/update_studio";
-constexpr const wchar_t *kPatchManifestURL =
-	L"https://obsproject.com/update_studio/getpatchmanifest";
+	L"https://d50yg09cghihd.cloudfront.net/updater/files";
 constexpr const wchar_t *kVSRedistURL =
 	L"https://aka.ms/vs/17/release/vc_redist.x64.exe";
 constexpr const wchar_t *kMSHostname = L"aka.ms";
