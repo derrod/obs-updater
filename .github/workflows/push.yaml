@@ -5,8 +5,7 @@ on:
     paths-ignore:
       - '**.md'
     branches:
-      - master
-      - 'release/**'
+      - '*'
     tags:
       - '*'
 
@@ -22,7 +21,7 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-      
+
       - name: Build Dependencies
         run: |
           & .\deps\Build-Dependencies.ps1
