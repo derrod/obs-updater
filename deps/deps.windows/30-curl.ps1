@@ -46,6 +46,7 @@ function Configure {
         '-DCURL_USE_SCHANNEL:BOOL=ON'
         '-DCURL_ZLIB:BOOL=OFF'
         '-DBUILD_SHARED_LIBS:BOOL=OFF'
+        '-DCURL_STATIC_CRT:BOOL=ON'
         '-DCURL_BROTLI:BOOL=ON'
         '-DUSE_NGHTTP2:BOOL=ON'
     )
