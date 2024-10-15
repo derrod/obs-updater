@@ -38,7 +38,9 @@ target_link_libraries(
           zstd::libzstd_static
           comctl32
           shell32
-          winhttp)
+          winhttp
+          version
+          wintrust)
 target_link_options(updater PRIVATE /IGNORE:4098 "/PDBALTPATH:updater.pdb")
 
 install(TARGETS updater)
