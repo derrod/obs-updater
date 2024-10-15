@@ -884,41 +884,6 @@ static bool RenameRemovedFile(deletion_t &deletion)
 	return false;
 }
 
-static void UpdateWithPatchIfAvailable(const PatchResponse &patch)
-{
-	wchar_t widePatchableFilename[MAX_PATH];
-
-	if (patch.source.compare(0, kCDNUrl.size(), kCDNUrl) != 0)
-		return;
-
-	if (patch.name.find('/') == string::npos)
-		return;
-
-	string patchPackageName(patch.name, 0, patch.name.find('/'));
-	string fileName(patch.name, patch.name.find('/') + 1);
-
-	if (!UTF8ToWideBuf(widePatchableFilename, fileName.c_str()))
-		return;
-
-	for (update_t &update : updates) {
-		if (update.packageName != patchPackageName)
-			continue;
-		if (update.outputPath != widePatchableFilename)
-			continue;
-
-		update.patchable = true;
-
-		/* Replace the source URL with the patch file, update
-	         * the download hash, and re-calculate download size */
-		StringToHash(patch.hash, update.downloadHash);
-		update.sourceURL = patch.source;
-		totalFileSize -= (update.fileSize - patch.size);
-		update.fileSize = patch.size;
-
-		break;
-	}
-}
-
 static bool MoveInUseFileAway(const update_t &file)
 {
 	_TCHAR deleteMeName[MAX_PATH];
@@ -1551,95 +1516,6 @@ static bool Update(wchar_t *cmdLine)
 		if (!UpdateVSRedists()) {
 			return false;
 		}
-	}
-
-	/* ------------------------------------- *
-	 * Generate file hash json               */
-
-	PatchesRequest files;
-	for (update_t &update : updates) {
-		if (!update.has_hash)
-			continue;
-
-		char outputPath[MAX_PATH];
-		if (!WideToUTF8Buf(outputPath, update.outputPath.c_str()))
-			continue;
-
-		string hash_string;
-		HashToString(update.my_hash, hash_string);
-
-		string package_path;
-		package_path = update.packageName;
-		package_path += "/";
-		package_path += outputPath;
-
-		files.push_back({package_path, hash_string});
-	}
-
-	/* ------------------------------------- *
-	 * Send file hashes                      */
-
-	string newManifest;
-	if (!files.empty()) {
-		json request = files;
-		string post_body = request.dump();
-
-		int len = (int)post_body.size();
-		size_t compressSize = ZSTD_compressBound(len);
-		string compressedJson;
-
-		compressedJson.resize(compressSize);
-
-		size_t result =
-			ZSTD_compress(compressedJson.data(),
-				      compressedJson.size(), post_body.data(),
-				      post_body.size(), ZSTD_CLEVEL_DEFAULT);
-
-		if (ZSTD_isError(result))
-			return false;
-
-		compressedJson.resize(result);
-
-		wstring manifestUrl(kPatchManifestURL);
-		if (branch != L"stable")
-			manifestUrl += L"?branch=" + branch;
-
-		int responseCode;
-		bool success = !!HTTPPostData(manifestUrl.c_str(),
-					      (BYTE *)compressedJson.data(),
-					      (int)compressedJson.size(),
-					      L"Accept-Encoding: gzip",
-					      &responseCode, newManifest);
-
-		if (!success)
-			return false;
-
-		if (responseCode != 200) {
-			Status(L"Update failed: HTTP/%d while trying to "
-			       L"download patch manifest",
-			       responseCode);
-			return false;
-		}
-	} else {
-		newManifest = "[]";
-	}
-
-	/* ------------------------------------- *
-	 * Parse new manifest                    */
-
-	PatchesResponse patches;
-	try {
-		json patchManifest = json::parse(newManifest);
-		patches = patchManifest.get<PatchesResponse>();
-	} catch (json::exception &e) {
-		Status(L"Update failed: Couldn't parse patch manifest: %S",
-		       e.what());
-		return false;
-	}
-
-	/* Update updates with patch information. */
-	for (const PatchResponse &patch : patches) {
-		UpdateWithPatchIfAvailable(patch);
 	}
 
 	/* ------------------------------------- *
