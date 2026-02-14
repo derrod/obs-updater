@@ -1942,6 +1942,9 @@ static int RestartAsAdmin(LPCWSTR lpCmdLine, LPCWSTR cwd)
 
 static bool HasElevation()
 {
+#ifdef _DEBUG
+	return true;
+#else
 	SID_IDENTIFIER_AUTHORITY sia = SECURITY_NT_AUTHORITY;
 	PSID sid = nullptr;
 	BOOL elevated = false;
@@ -1955,6 +1958,7 @@ static bool HasElevation()
 	}
 
 	return elevated;
+#endif
 }
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int)
