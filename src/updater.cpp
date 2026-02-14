@@ -16,13 +16,11 @@
 
 #include "manifest.hpp"
 #include "updater.hpp"
+#include "util/CoTaskMemPtr.hpp"
 
 #include <psapi.h>
 #include <SoftPub.h>
 #include <WinTrust.h>
-
-#include <util/windows/CoTaskMemPtr.hpp>
-
 #include <exception>
 #include <future>
 #include <mutex>
@@ -437,7 +435,8 @@ bool DownloadWorkerThread()
 
 			/* Validate hash of downloaded data. */
 			B2Hash dataHash;
-			blake2b(dataHash.data(), dataHash.size(), buf.data(), buf.size(), nullptr, 0);
+			blake2b(reinterpret_cast<uint8_t *>(dataHash.data()), reinterpret_cast<uint8_t *>(buf.data()),
+				nullptr, dataHash.size(), buf.size(), 0);
 
 			if (dataHash != update.downloadHash) {
 				downloadThreadFailure = true;
@@ -789,7 +788,7 @@ static bool RenameRemovedFile(deletion_t &deletion)
 	string temp;
 
 	CryptGenRandom(hProvider, sizeof(junk), junk);
-	blake2b(hash.data(), hash.size(), junk, sizeof(junk), nullptr, 0);
+	blake2b(reinterpret_cast<uint8_t *>(hash.data()), junk, nullptr, hash.size(), sizeof(junk), 0);
 	HashToString(hash, temp);
 
 	if (!UTF8ToWideBuf(randomStr, temp.c_str()))
@@ -860,7 +859,7 @@ static bool MoveInUseFileAway(const update_t &file)
 	string temp;
 
 	CryptGenRandom(hProvider, sizeof(junk), junk);
-	blake2b(hash.data(), hash.size(), junk, sizeof(junk), nullptr, 0);
+	blake2b(reinterpret_cast<uint8_t *>(hash.data()), junk, nullptr, hash.size(), sizeof(junk), 0);
 	HashToString(hash, temp);
 
 	if (!UTF8ToWideBuf(randomStr, temp.c_str()))

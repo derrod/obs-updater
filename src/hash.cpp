@@ -15,8 +15,8 @@
  */
 
 #include "updater.hpp"
+#include "util/WinHandle.hpp"
 
-#include <util/windows/WinHandle.hpp>
 #include <vector>
 
 using namespace std;
@@ -68,7 +68,7 @@ bool CalculateFileHash(const wchar_t *path, B2Hash &hash)
 			return false;
 	}
 
-	if (blake2b_final(&blake2, hash.data(), hash.size()) != 0)
+	if (blake2b_final(&blake2, reinterpret_cast<uint8_t*>(hash.data()), hash.size()) != 0)
 		return false;
 
 	return true;

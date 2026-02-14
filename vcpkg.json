@@ -1,0 +1,14 @@
+{
+  "name": "obs-updater",
+  "dependencies": [
+    {
+      "name": "libb2"
+    },
+    {
+      "name": "nlohmann-json"
+    },
+    {
+      "name": "zstd"
+    }
+  ]
+}

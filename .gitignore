@@ -1,0 +1,22 @@
+# Exclude everything
+/*
+
+# Except for default project files
+!/.github
+!/resources
+!/src
+!.clang-format
+!.editorconfig
+!.gitignore
+!vcpkg.json
+!vcpkg-configuration.json
+!obs-updater.slnx
+!obs-updater.vcxproj
+!obs-updater.vcxproj.filters
+!README.md
+
+# Exclude lock files
+*.lock.json
+
+# Exclude APS files
+*.aps
