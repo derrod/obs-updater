@@ -9,12 +9,20 @@ jobs:
     strategy:
       matrix:
         configuration: [Debug, Release]
-
+    env:
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg_cache,readwrite
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: true
+
+      - name: Restore vcpkg cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ github.workspace }}/vcpkg_cache
+          key: vcpkg-${{ matrix.configuration }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-${{ matrix.configuration }}-
 
       - name: Add msbuild to PATH
         uses: microsoft/setup-msbuild@v2
@@ -35,3 +43,9 @@ jobs:
         with:
           name: updater-x64-${{ matrix.configuration }}
           path: x64/${{ matrix.configuration }}
+
+      - name: Save vcpkg cache
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg_cache
+          key: vcpkg-${{ matrix.configuration }}-${{ hashFiles('vcpkg.json') }}
