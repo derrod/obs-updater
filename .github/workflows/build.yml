@@ -1,0 +1,37 @@
+name: Build
+on:
+  push:
+
+jobs:
+  build:
+    name: Build
+    runs-on: windows-2025-vs2026
+    strategy:
+      matrix:
+        configuration: [Debug, Release]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: '${{ runner.workspace }}/b/vcpkg'
+          vcpkgGitCommitId: e5a1490e1409d175932ef6014519e9ae149ddb7c
+
+      - name: Integrate vcpkg
+        run: vcpkg integrate install
+
+      - name: Build app for release
+        run: msbuild obs-updater.slnx -property:Configuration=${{ matrix.configuration }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: updater-x64-${{ matrix.configuration }}
+          path: x64/${{ matrix.configuration }}
