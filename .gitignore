@@ -13,6 +13,7 @@
 !obs-updater.slnx
 !obs-updater.vcxproj
 !obs-updater.vcxproj.filters
+!LICENSE
 !README.md
 
 # Exclude lock files
