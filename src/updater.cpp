@@ -52,6 +52,13 @@ HCRYPTPROV hProvider = 0;
 static bool bExiting = false;
 static bool updateFailed = false;
 
+static bool logVisible = false;
+static int baseWindowHeight = 0;
+static mutex logMutex;
+
+static constexpr int WINDOW_HEIGHT_DLU = 56;
+static constexpr int LOG_HEIGHT_DLU = 120;
+
 static atomic<bool> downloadThreadFailure = false;
 
 size_t totalFileSize = 0;
@@ -97,6 +104,30 @@ static bool IsVSRedistOutdated()
 	return LOWORD(info->dwFileVersionMS) < 40;
 }
 
+static void Log(const wchar_t *fmt, ...)
+{
+	wchar_t str[512];
+	va_list argptr;
+
+	va_start(argptr, fmt);
+	int len = _vsnwprintf_s(str, _countof(str) - 2, _TRUNCATE, fmt, argptr);
+	va_end(argptr);
+
+	if (len >= 0) {
+		str[len] = L'\r';
+		str[len + 1] = L'\n';
+		str[len + 2] = L'\0';
+
+		HWND hwndLog = GetDlgItem(hwndMain, IDC_LOG);
+		if (hwndLog) {
+			lock_guard<mutex> lock(logMutex);
+			int len = GetWindowTextLength(hwndLog);
+			SendMessage(hwndLog, EM_SETSEL, len, len);
+			SendMessage(hwndLog, EM_REPLACESEL, FALSE, (LPARAM)str);
+		}
+	}
+}
+
 static void Status(const wchar_t *fmt, ...)
 {
 	wchar_t str[512];
@@ -107,6 +138,7 @@ static void Status(const wchar_t *fmt, ...)
 	StringCbVPrintf(str, sizeof(str), fmt, argptr);
 
 	SetDlgItemText(hwndMain, IDC_STATUS, str);
+	Log(L"%s", str);
 
 	va_end(argptr);
 }
@@ -415,6 +447,8 @@ bool DownloadWorkerThread()
 			auto &buf = download_data.at(update.downloadHash);
 			/* Reserve required memory */
 			buf.reserve(update.fileSize);
+
+			Log(L"Downloading %s...", update.sourceURL.c_str());
 
 			if (!HTTPGetBuffer(hConnect, update.sourceURL.c_str(), L"Accept-Encoding: gzip", buf,
 					   &responseCode)) {
@@ -938,6 +972,8 @@ static bool UpdateFile(ZSTD_DCtx *ctx, update_t &file)
 	retryAfterMovingFile:
 
 		if (file.patchable) {
+			Log(L"Patching %s...", file.outputPath.c_str());
+
 			error_code = ApplyPatch(ctx, patch_data.data(), file.fileSize, file.outputPath.c_str());
 
 			installed_ok = (error_code == 0);
@@ -964,6 +1000,7 @@ static bool UpdateFile(ZSTD_DCtx *ctx, update_t &file)
 				}
 			}
 		} else {
+			Log(L"Installing %s...", file.outputPath.c_str());
 			installed_ok = QuickWriteFile(file.outputPath.c_str(), patch_data.data(), patch_data.size());
 			error_code = GetLastError();
 		}
@@ -1003,6 +1040,8 @@ static bool UpdateFile(ZSTD_DCtx *ctx, update_t &file)
 			Status(L"Update failed: Source file %s not found", file.outputPath.c_str());
 			return false;
 		}
+
+		Log(L"Installing %s...", file.outputPath.c_str());
 
 		/* We may be installing into new folders,
 		 * make sure they exist */
@@ -1679,8 +1718,12 @@ static DWORD WINAPI UpdateThread(void *arg)
 			Status(L"Update aborted.");
 
 		HWND hProgress = GetDlgItem(hwndMain, IDC_PROGRESS);
+
+		/* Even a no-op style change apparently resets the progress bar */
 		LONG_PTR style = GetWindowLongPtr(hProgress, GWL_STYLE);
-		SetWindowLongPtr(hProgress, GWL_STYLE, style & ~PBS_MARQUEE);
+		if (style & PBS_MARQUEE)
+			SetWindowLongPtr(hProgress, GWL_STYLE, style & ~PBS_MARQUEE);
+
 		SendMessage(hProgress, PBM_SETSTATE, PBST_ERROR, 0);
 
 		SetDlgItemText(hwndMain, IDC_BUTTON, L"Exit");
@@ -1739,6 +1782,34 @@ static void LaunchOBS(LPWSTR lpCmdLine)
 	ShellExecuteEx(&execInfo);
 }
 
+static void ToggleLogVisibility()
+{
+	logVisible = !logVisible;
+
+	HWND hwndLog = GetDlgItem(hwndMain, IDC_LOG);
+	if (!hwndLog)
+		return;
+
+	RECT rc;
+	GetWindowRect(hwndMain, &rc);
+
+	SetDlgItemText(hwndMain, IDC_LOGBUTTON, logVisible ? L"Hide Log" : L"Show Log");
+
+	if (logVisible) {
+		/* Convert log height from DLUs to pixels */
+		RECT dluRect = {0, 0, 0, LOG_HEIGHT_DLU};
+		MapDialogRect(hwndMain, &dluRect);
+		int logPixelHeight = dluRect.bottom;
+
+		SetWindowPos(hwndMain, nullptr, 0, 0, rc.right - rc.left, baseWindowHeight + logPixelHeight,
+			     SWP_NOMOVE | SWP_NOZORDER);
+		ShowWindow(hwndLog, SW_SHOW);
+	} else {
+		ShowWindow(hwndLog, SW_HIDE);
+		SetWindowPos(hwndMain, nullptr, 0, 0, rc.right - rc.left, baseWindowHeight, SWP_NOMOVE | SWP_NOZORDER);
+	}
+}
+
 static INT_PTR CALLBACK UpdateDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	switch (message) {
@@ -1746,10 +1817,52 @@ static INT_PTR CALLBACK UpdateDialogProc(HWND hwnd, UINT message, WPARAM wParam,
 		static HICON hMainIcon = LoadIcon(hinstMain, MAKEINTRESOURCE(IDI_ICON1));
 		SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hMainIcon);
 		SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hMainIcon);
+
+		RECT rc;
+		GetWindowRect(hwnd, &rc);
+		baseWindowHeight = rc.bottom - rc.top;
+
+		/* Get the client area bottom to position the log control */
+		RECT clientRc;
+		GetClientRect(hwnd, &clientRc);
+
+		/* Create a hidden multiline edit control for log output */
+		HWND hwndLog = CreateWindowEx(
+			WS_EX_CLIENTEDGE, L"EDIT", L"",
+			WS_CHILD | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL, 0,
+			clientRc.bottom, clientRc.right, 0, hwnd, (HMENU)(INT_PTR)IDC_LOG, hinstMain, nullptr);
+
+		SendMessage(hwndLog, EM_SETLIMITTEXT, 0, 0);
+
+		/* Use the same font as the dialog (MS Shell Dlg) */
+		HFONT hFont = (HFONT)SendMessage(hwnd, WM_GETFONT, 0, 0);
+		if (hFont)
+			SendMessage(hwndLog, WM_SETFONT, (WPARAM)hFont, FALSE);
+
 		return true;
 	}
 
-	case WM_COMMAND:
+	case WM_SIZE: {
+		HWND hwndLog = GetDlgItem(hwnd, IDC_LOG);
+		if (!hwndLog)
+			break;
+
+		RECT clientRc;
+		GetClientRect(hwnd, &clientRc);
+
+		RECT baseDlu = {0, 0, 0, WINDOW_HEIGHT_DLU};
+		MapDialogRect(hwnd, &baseDlu);
+
+		int logTop = baseDlu.bottom;
+		int logHeight = clientRc.bottom - logTop;
+
+		if (logHeight > 0)
+			SetWindowPos(hwndLog, nullptr, 0, logTop, clientRc.right, logHeight, SWP_NOZORDER);
+
+		return true;
+	}
+
+	case WM_COMMAND: {
 		if (LOWORD(wParam) == IDC_BUTTON) {
 			if (HIWORD(wParam) == BN_CLICKED) {
 				DWORD result = WaitForSingleObject(updateThread, 0);
@@ -1763,8 +1876,13 @@ static INT_PTR CALLBACK UpdateDialogProc(HWND hwnd, UINT message, WPARAM wParam,
 					CancelUpdate(false);
 				}
 			}
+		} else if (LOWORD(wParam) == IDC_LOGBUTTON) {
+			if (HIWORD(wParam) == BN_CLICKED) {
+				ToggleLogVisibility();
+			}
 		}
 		return true;
+	}
 
 	case WM_CLOSE:
 		CancelUpdate(true);
