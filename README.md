@@ -1,9 +1,11 @@
 # OBS Updater
 
-This repository is a standalone version of the OBS Studio Updater, refactored to use MSBuild and vcpkg for dependency management instead of CMake.
+This repository is a standalone version of the OBS Studio Updater.
 
-ToDo:
-- curl and HTTP/2 support
+The following changes have been made compared to the upstream version:
+- Use MSBuild and vcpkg instead of cmake and custom deps
+- Added Log window (by @notr1ch)
+- Switched to curl + nghttp for HTTP/2 downloads
 
 ## Building
 
