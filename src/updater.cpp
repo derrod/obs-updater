@@ -478,6 +478,7 @@ static bool DownloadWorkerThread()
 	uint64_t last_update = 0;
 	int last_update_count = 0;
 	bool failure = false;
+	bool version_logged = false;
 
 	do {
 		CURLMcode mc = curl_multi_perform(multi, &still_running);
@@ -555,6 +556,31 @@ static bool DownloadWorkerThread()
 					failure = true;
 					break;
 				}
+			}
+
+			if (!version_logged) {
+				long http_version;
+				curl_easy_getinfo(msg->easy_handle, CURLINFO_HTTP_VERSION, &http_version);
+				const wchar_t *http_version_str;
+				switch (http_version) {
+				case CURL_HTTP_VERSION_1_0:
+					http_version_str = L"1.0";
+					break;
+				case CURL_HTTP_VERSION_1_1:
+					http_version_str = L"1.1";
+					break;
+				case CURL_HTTP_VERSION_2_0:
+					http_version_str = L"2.0";
+					break;
+				case CURL_HTTP_VERSION_3:
+					http_version_str = L"3.0";
+					break;
+				default:
+					http_version_str = L"Unknown";
+					break;
+				}
+				Log(L"HTTP version used: %s", http_version_str);
+				version_logged = true;
 			}
 
 			++completedUpdates;
