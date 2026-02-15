@@ -476,7 +476,7 @@ static bool DownloadWorkerThread()
 	int still_running = 0;
 	int msgs_left = 0;
 	uint64_t last_update = 0;
-	int last_update_count = 0;
+	int last_update_count = static_cast<int>(requests.size());
 	bool failure = false;
 	bool version_logged = false;
 
