@@ -35,6 +35,7 @@
 #include <ctype.h>
 #include <blake2.h>
 #include <zstd.h>
+#include <curl/curl.h>
 
 #include <array>
 #include <atomic>
@@ -122,4 +123,46 @@ public:
 	inline ~ZSTDDCtx() { ZSTD_freeDCtx(ctx); }
 	inline operator ZSTD_DCtx *() const { return ctx; }
 	inline ZSTD_DCtx *get() const { return ctx; }
+};
+
+class CurlRequest {
+	CURL *c = nullptr;
+	curl_slist *header = nullptr;
+
+public:
+	CurlRequest() { c = curl_easy_init(); }
+	~CurlRequest()
+	{
+		curl_easy_cleanup(c);
+		if (header)
+			curl_slist_free_all(header);
+	}
+	CurlRequest(CurlRequest &&o) noexcept
+	{
+		c = o.c;
+		header = o.header;
+
+		o.c = nullptr;
+		o.header = nullptr;
+	}
+	void addHeader(const char *head)
+	{
+		if (!c || !head)
+			return;
+
+		header = curl_slist_append(header, head);
+		curl_easy_setopt(c, CURLOPT_HTTPHEADER, header);
+	}
+	operator CURL *() const { return c; }
+	CURL *get() const { return c; }
+};
+
+class CurlMulti {
+	CURLM *m = nullptr;
+
+public:
+	inline CurlMulti() { m = curl_multi_init(); }
+	inline ~CurlMulti() { curl_multi_cleanup(m); }
+	inline operator CURLM *() const { return m; }
+	inline CURLM *get() const { return m; }
 };

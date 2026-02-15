@@ -2,6 +2,13 @@
   "name": "obs-updater",
   "dependencies": [
     {
+      "name": "curl",
+      "features": [
+        "brotli",
+        "http2"
+      ]
+    },
+    {
       "name": "libb2"
     },
     {
