@@ -21,8 +21,8 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ github.workspace }}/vcpkg_cache
-          key: vcpkg-${{ matrix.configuration }}-${{ hashFiles('vcpkg.json') }}
-          restore-keys: vcpkg-${{ matrix.configuration }}-
+          key: vcpkg-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-
 
       - name: Add msbuild to PATH
         uses: microsoft/setup-msbuild@v2
@@ -46,6 +46,8 @@ jobs:
 
       - name: Save vcpkg cache
         uses: actions/cache/save@v4
+        # The cache is the same for release and debug, but only save it on Release runs
+        if: matrix.configuration == 'Release'
         with:
           path: ${{ github.workspace }}/vcpkg_cache
-          key: vcpkg-${{ matrix.configuration }}-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-${{ hashFiles('vcpkg.json') }}
